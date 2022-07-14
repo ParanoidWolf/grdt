@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"regexp"
+	"strings"
+	"sync"
 )
 
 func get_json(subreddit string) []byte {
@@ -57,4 +62,40 @@ func get_images(body []byte) []string {
     }
 
     return images_list
+}
+
+func downloadFile(URL string) ([]byte, error) {
+	response, err := http.Get(URL)
+	if err != nil {
+		return nil, err
+	}
+        defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+        return nil, errors.New(response.Status)
+	}
+	var data bytes.Buffer
+	_, err = io.Copy(&data, response.Body)
+	if err != nil {
+		return nil, err
+	}
+	return data.Bytes(), nil
+}
+
+func downloadMultipleFiles(urls []string) {
+    var waiter sync.WaitGroup
+    waiter.Add(len(urls))
+	for _, URL := range urls {
+        go func(URL string, waiter *sync.WaitGroup) {
+            b, err := downloadFile(URL)
+            url_comp := strings.Split(URL, "/")
+            file_name := url_comp[len(url_comp) - 1]
+            fmt.Println(file_name)
+            if err != nil {
+                return
+            }
+            ioutil.WriteFile(file_name, b, 0644)
+            waiter.Done()
+        } (URL, &waiter)
+	}
+    waiter.Wait()
 }
